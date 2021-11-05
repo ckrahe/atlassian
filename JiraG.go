@@ -60,7 +60,12 @@ func process(inFile *os.File, outFile *os.File) error {
 	issueInfo := readIssues(input, headerInfo)
 
 	for _, issue := range issueInfo {
-		_, err := output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
+		var err error
+		if len(issue.status) > 0 {
+			_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
+		} else {
+			_, err = output.WriteString(fmt.Sprintf("object %s {\n \"unknown\" \n}\n", normalizeKey(issue.issueKey)))
+		}
 		if err != nil {
 			return fmt.Errorf("output failure: %v", err)
 		}
@@ -110,8 +115,8 @@ func readHeader(input *bufio.Scanner) HeaderInfo {
 	return headerInfo
 }
 
-func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) []IssueInfo {
-	var issues []IssueInfo
+func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) map[string]IssueInfo {
+	issues := make(map[string]IssueInfo)
 	for input.Scan() {
 		var issue IssueInfo
 		columns := strings.Split(input.Text(), ",")
@@ -121,15 +126,27 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) []IssueInfo {
 			key := columns[idx]
 			if len(key) > 0 {
 				issue.blockerKeys = append(issue.blockerKeys, key)
+				_, ok := issues[key]
+				if !ok {
+					var blocker IssueInfo
+					blocker.issueKey = key
+					issues[key] = blocker
+				}
 			}
 		}
 		for _, idx := range headerInfo.blockedIdx {
 			key := columns[idx]
 			if len(key) > 0 {
 				issue.blockedKeys = append(issue.blockedKeys, key)
+				_, ok := issues[key]
+				if !ok {
+					var blocked IssueInfo
+					blocked.issueKey = key
+					issues[key] = blocked
+				}
 			}
 		}
-		issues = append(issues, issue)
+		issues[issue.issueKey] = issue
 	}
 	return issues
 }
