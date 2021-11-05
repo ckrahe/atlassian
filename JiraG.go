@@ -133,6 +133,7 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) map[string]IssueInf
 				if !ok {
 					var blocker IssueInfo
 					blocker.issueKey = key
+					blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
 					issues[key] = blocker
 				}
 			}
@@ -145,6 +146,7 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) map[string]IssueInf
 				if !ok {
 					var blocked IssueInfo
 					blocked.issueKey = key
+					blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
 					issues[key] = blocked
 				}
 			}
