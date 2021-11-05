@@ -24,6 +24,7 @@ type IssueInfo struct {
 
 var inFilename = flag.String("in", "tickets.csv", "the file to process")
 var outFilename = flag.String("out", "tickets.txt", "the file to create")
+var hideOrphans = flag.Bool("hideOrphans", false, "don't show tickets without relationships")
 
 func main() {
 	flag.Parse()
@@ -39,7 +40,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = process(inFile, outFile)
+	err = process(inFile, outFile, *hideOrphans)
 	inFile.Close()
 	outFile.Close()
 	if err != nil {
@@ -48,7 +49,7 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File) error {
+func process(inFile *os.File, outFile *os.File, hideOrphans bool) error {
 	input := bufio.NewScanner(inFile)
 	output := bufio.NewWriter(outFile)
 	_, err := output.WriteString("@startuml\n")
@@ -60,14 +61,16 @@ func process(inFile *os.File, outFile *os.File) error {
 	issueInfo := readIssues(input, headerInfo)
 
 	for _, issue := range issueInfo {
-		var err error
-		if len(issue.status) > 0 {
-			_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
-		} else {
-			_, err = output.WriteString(fmt.Sprintf("object %s {\n \"unknown\" \n}\n", normalizeKey(issue.issueKey)))
-		}
-		if err != nil {
-			return fmt.Errorf("output failure: %v", err)
+		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+			var err error
+			if len(issue.status) > 0 {
+				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
+			} else {
+				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"unknown\" \n}\n", normalizeKey(issue.issueKey)))
+			}
+			if err != nil {
+				return fmt.Errorf("output failure: %v", err)
+			}
 		}
 	}
 
