@@ -10,12 +10,14 @@ import (
 
 type HeaderInfo struct {
 	issueKeyIdx int
+	statusIdx   int
 	blockedIdx  []int
 	blockerIdx  []int
 }
 
 type IssueInfo struct {
 	issueKey    string
+	status      string
 	blockedKeys []string
 	blockerKeys []string
 }
@@ -58,7 +60,7 @@ func process(inFile *os.File, outFile *os.File) error {
 	issueInfo := readIssues(input, headerInfo)
 
 	for _, issue := range issueInfo {
-		_, err := output.WriteString(fmt.Sprintf("object %s\n", normalizeKey(issue.issueKey)))
+		_, err := output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
 		if err != nil {
 			return fmt.Errorf("output failure: %v", err)
 		}
@@ -95,6 +97,9 @@ func readHeader(input *bufio.Scanner) HeaderInfo {
 		case "Issue key":
 			headerInfo.issueKeyIdx = i
 
+		case "Status":
+			headerInfo.statusIdx = i
+
 		case "Inward issue link (Blocks)":
 			headerInfo.blockerIdx = append(headerInfo.blockerIdx, i)
 
@@ -111,6 +116,7 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) []IssueInfo {
 		var issue IssueInfo
 		columns := strings.Split(input.Text(), ",")
 		issue.issueKey = columns[headerInfo.issueKeyIdx]
+		issue.status = columns[headerInfo.statusIdx]
 		for _, idx := range headerInfo.blockerIdx {
 			key := columns[idx]
 			if len(key) > 0 {
