@@ -10,6 +10,7 @@ import (
 
 type HeaderInfo struct {
 	issueKeyIdx int
+	summaryIdx  int
 	statusIdx   int
 	blockedIdx  []int
 	blockerIdx  []int
@@ -17,6 +18,7 @@ type HeaderInfo struct {
 
 type IssueInfo struct {
 	issueKey    string
+	summary     string
 	status      string
 	blockedKeys []string
 	blockerKeys []string
@@ -24,8 +26,10 @@ type IssueInfo struct {
 
 var inFilename = flag.String("in", "tickets.csv", "the file to process")
 var outFilename = flag.String("out", "tickets.txt", "the file to create")
+var hideSummary = flag.Bool("hideSummary", false, "don't show ticket summaries")
 var hideOrphans = flag.Bool("hideOrphans", true, "don't show tickets without relationships")
 var hideKeys = flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
+var wrapWidth = flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
 
 func main() {
 	flag.Parse()
@@ -48,7 +52,7 @@ func main() {
 		}
 	}
 
-	err = process(inFile, outFile, *hideOrphans, keysToHide)
+	err = process(inFile, outFile, *hideSummary, *hideOrphans, keysToHide, *wrapWidth)
 	inFile.Close()
 	outFile.Close()
 	if err != nil {
@@ -57,28 +61,30 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File, hideOrphans bool, keysToHide map[string]struct{}) error {
+func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bool, keysToHide map[string]struct{}, wrapWidth int) error {
 	input := bufio.NewScanner(inFile)
 	output := bufio.NewWriter(outFile)
 	_, err := output.WriteString("@startuml\n")
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
+	output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", wrapWidth))
 
 	headerInfo := readHeader(input)
 	issueInfo := readIssues(input, headerInfo, keysToHide)
 
 	for _, issue := range issueInfo {
 		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
-			var err error
+			effectiveStatus := "unknown"
 			if len(issue.status) > 0 {
-				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
-			} else {
-				_, err = output.WriteString(fmt.Sprintf("object %s {\n unknown \n}\n", normalizeKey(issue.issueKey)))
+				effectiveStatus = issue.status
 			}
-			if err != nil {
-				return fmt.Errorf("output failure: %v", err)
+			output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
+			output.WriteString(fmt.Sprintf("  %s", effectiveStatus))
+			if !hideSummary && len(issue.summary) > 0 {
+				output.WriteString(fmt.Sprintf(" - %s", issue.summary))
 			}
+			output.WriteString("\n}\n")
 		}
 	}
 
@@ -113,6 +119,9 @@ func readHeader(input *bufio.Scanner) HeaderInfo {
 		case "Issue key":
 			headerInfo.issueKeyIdx = i
 
+		case "Summary":
+			headerInfo.summaryIdx = i
+
 		case "Status":
 			headerInfo.statusIdx = i
 
@@ -135,6 +144,7 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[stri
 		if !hideIt {
 			var issue IssueInfo
 			issue.issueKey = issueKey
+			issue.summary = columns[headerInfo.summaryIdx]
 			issue.status = columns[headerInfo.statusIdx]
 			for _, idx := range headerInfo.blockerIdx {
 				blockerKey := columns[idx]
