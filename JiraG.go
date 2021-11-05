@@ -66,11 +66,10 @@ func process(inFile *os.File, outFile *os.File, hideOrphans bool, keysToHide map
 	}
 
 	headerInfo := readHeader(input)
-	issueInfo := readIssues(input, headerInfo)
+	issueInfo := readIssues(input, headerInfo, keysToHide)
 
 	for _, issue := range issueInfo {
-		_, hideIt := keysToHide[issue.issueKey]
-		if !hideIt && (!hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0) {
+		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
 			var err error
 			if len(issue.status) > 0 {
 				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
@@ -80,22 +79,14 @@ func process(inFile *os.File, outFile *os.File, hideOrphans bool, keysToHide map
 			if err != nil {
 				return fmt.Errorf("output failure: %v", err)
 			}
-		} else {
-			fmt.Printf("Skipping key %s, hidden = %t \n", issue.issueKey, hideIt)
 		}
 	}
 
 	for _, issue := range issueInfo {
-		_, hideIt := keysToHide[issue.issueKey]
-		if !hideIt {
-			for _, blockedKey := range issue.blockedKeys {
-				_, hideBlocked := keysToHide[blockedKey]
-				if !hideBlocked {
-					_, err := output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
-					if err != nil {
-						return fmt.Errorf("output failure: %v", err)
-					}
-				}
+		for _, blockedKey := range issue.blockedKeys {
+			_, err := output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
+			if err != nil {
+				return fmt.Errorf("output failure: %v", err)
 			}
 		}
 	}
@@ -135,40 +126,50 @@ func readHeader(input *bufio.Scanner) HeaderInfo {
 	return headerInfo
 }
 
-func readIssues(input *bufio.Scanner, headerInfo HeaderInfo) map[string]IssueInfo {
+func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[string]struct{}) map[string]IssueInfo {
 	issues := make(map[string]IssueInfo)
 	for input.Scan() {
-		var issue IssueInfo
 		columns := strings.Split(input.Text(), ",")
-		issue.issueKey = columns[headerInfo.issueKeyIdx]
-		issue.status = columns[headerInfo.statusIdx]
-		for _, idx := range headerInfo.blockerIdx {
-			key := columns[idx]
-			if len(key) > 0 {
-				issue.blockerKeys = append(issue.blockerKeys, key)
-				_, ok := issues[key]
-				if !ok {
-					var blocker IssueInfo
-					blocker.issueKey = key
-					blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
-					issues[key] = blocker
+		issueKey := columns[headerInfo.issueKeyIdx]
+		_, hideIt := keysToHide[issueKey]
+		if !hideIt {
+			var issue IssueInfo
+			issue.issueKey = issueKey
+			issue.status = columns[headerInfo.statusIdx]
+			for _, idx := range headerInfo.blockerIdx {
+				blockerKey := columns[idx]
+				if len(blockerKey) > 0 {
+					_, hideBlocker := keysToHide[blockerKey]
+					if !hideBlocker {
+						issue.blockerKeys = append(issue.blockerKeys, blockerKey)
+						_, ok := issues[blockerKey]
+						if !ok {
+							var blocker IssueInfo
+							blocker.issueKey = blockerKey
+							blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
+							issues[blockerKey] = blocker
+						}
+					}
 				}
 			}
-		}
-		for _, idx := range headerInfo.blockedIdx {
-			key := columns[idx]
-			if len(key) > 0 {
-				issue.blockedKeys = append(issue.blockedKeys, key)
-				_, ok := issues[key]
-				if !ok {
-					var blocked IssueInfo
-					blocked.issueKey = key
-					blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
-					issues[key] = blocked
+			for _, idx := range headerInfo.blockedIdx {
+				blockedKey := columns[idx]
+				if len(blockedKey) > 0 {
+					_, hideBlocked := keysToHide[blockedKey]
+					if !hideBlocked {
+						issue.blockedKeys = append(issue.blockedKeys, blockedKey)
+						_, ok := issues[blockedKey]
+						if !ok {
+							var blocked IssueInfo
+							blocked.issueKey = blockedKey
+							blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
+							issues[blockedKey] = blocked
+						}
+					}
 				}
 			}
+			issues[issue.issueKey] = issue
 		}
-		issues[issue.issueKey] = issue
 	}
 	return issues
 }
