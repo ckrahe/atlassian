@@ -80,11 +80,11 @@ func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bo
 				effectiveStatus = issue.status
 			}
 			output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
-			output.WriteString(fmt.Sprintf("  %s", effectiveStatus))
+			output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
 			if !hideSummary && len(issue.summary) > 0 {
-				output.WriteString(fmt.Sprintf(" - %s", issue.summary))
+				output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
 			}
-			output.WriteString("\n}\n")
+			output.WriteString("}\n")
 		}
 	}
 
