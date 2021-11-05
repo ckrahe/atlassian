@@ -24,7 +24,8 @@ type IssueInfo struct {
 
 var inFilename = flag.String("in", "tickets.csv", "the file to process")
 var outFilename = flag.String("out", "tickets.txt", "the file to create")
-var hideOrphans = flag.Bool("hideOrphans", false, "don't show tickets without relationships")
+var hideOrphans = flag.Bool("hideOrphans", true, "don't show tickets without relationships")
+var hideKeys = flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
 
 func main() {
 	flag.Parse()
@@ -39,8 +40,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "can't create output file (%s): %v\n", *outFilename, err)
 		os.Exit(1)
 	}
+	keysToHide := make(map[string]struct{})
+	if len(*hideKeys) > 0 {
+		keysToHideList := strings.Split(*hideKeys, ",")
+		for _, hideKey := range keysToHideList {
+			keysToHide[hideKey] = struct{}{}
+		}
+	}
 
-	err = process(inFile, outFile, *hideOrphans)
+	err = process(inFile, outFile, *hideOrphans, keysToHide)
 	inFile.Close()
 	outFile.Close()
 	if err != nil {
@@ -49,7 +57,7 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File, hideOrphans bool) error {
+func process(inFile *os.File, outFile *os.File, hideOrphans bool, keysToHide map[string]struct{}) error {
 	input := bufio.NewScanner(inFile)
 	output := bufio.NewWriter(outFile)
 	_, err := output.WriteString("@startuml\n")
@@ -61,24 +69,33 @@ func process(inFile *os.File, outFile *os.File, hideOrphans bool) error {
 	issueInfo := readIssues(input, headerInfo)
 
 	for _, issue := range issueInfo {
-		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+		_, hideIt := keysToHide[issue.issueKey]
+		if !hideIt && (!hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0) {
 			var err error
 			if len(issue.status) > 0 {
 				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"%s\" \n}\n", normalizeKey(issue.issueKey), issue.status))
 			} else {
-				_, err = output.WriteString(fmt.Sprintf("object %s {\n \"unknown\" \n}\n", normalizeKey(issue.issueKey)))
+				_, err = output.WriteString(fmt.Sprintf("object %s {\n unknown \n}\n", normalizeKey(issue.issueKey)))
 			}
 			if err != nil {
 				return fmt.Errorf("output failure: %v", err)
 			}
+		} else {
+			fmt.Printf("Skipping key %s, hidden = %t \n", issue.issueKey, hideIt)
 		}
 	}
 
 	for _, issue := range issueInfo {
-		for _, blockedKey := range issue.blockedKeys {
-			_, err := output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
-			if err != nil {
-				return fmt.Errorf("output failure: %v", err)
+		_, hideIt := keysToHide[issue.issueKey]
+		if !hideIt {
+			for _, blockedKey := range issue.blockedKeys {
+				_, hideBlocked := keysToHide[blockedKey]
+				if !hideBlocked {
+					_, err := output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
+					if err != nil {
+						return fmt.Errorf("output failure: %v", err)
+					}
+				}
 			}
 		}
 	}
