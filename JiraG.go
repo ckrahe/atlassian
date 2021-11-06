@@ -63,12 +63,6 @@ func main() {
 
 func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bool, keysToHide map[string]struct{}, wrapWidth int) error {
 	input := bufio.NewScanner(inFile)
-	output := bufio.NewWriter(outFile)
-	_, err := output.WriteString("@startuml\n")
-	if err != nil {
-		return fmt.Errorf("output failure: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", wrapWidth))
 
 	headerInfo, err := readHeader(input)
 	if err != nil {
@@ -76,38 +70,9 @@ func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bo
 	}
 	issueInfo := readIssues(input, headerInfo, keysToHide)
 
-	for _, issue := range issueInfo {
-		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
-			effectiveStatus := "unknown"
-			if len(issue.status) > 0 {
-				effectiveStatus = issue.status
-			}
-			output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
-			output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
-			if !hideSummary && len(issue.summary) > 0 {
-				output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
-			}
-			output.WriteString("}\n")
-		}
-	}
-
-	for _, issue := range issueInfo {
-		for _, blockedKey := range issue.blockedKeys {
-			_, err := output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
-			if err != nil {
-				return fmt.Errorf("output failure: %v", err)
-			}
-		}
-	}
-
-	_, err = output.WriteString("@enduml\n")
+	err = writeOutput(&issueInfo, hideOrphans, outFile, hideSummary)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
-	}
-
-	err = output.Flush()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "output may be incomplete: %v\n", err)
 	}
 
 	return nil
@@ -213,6 +178,47 @@ func loadBlocked(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[stri
 			}
 		}
 	}
+}
+
+func writeOutput(issueInfo *map[string]IssueInfo, hideOrphans bool, outFile *os.File, hideSummary bool) error {
+	output := bufio.NewWriter(outFile)
+
+	// write header
+	_, err := output.WriteString("@startuml\n")
+	if err != nil {
+		return fmt.Errorf("output failure: %v", err)
+	}
+	_, _ = output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", wrapWidth))
+
+	// write each issue as an object
+	for _, issue := range *issueInfo {
+		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+			effectiveStatus := "unknown"
+			if len(issue.status) > 0 {
+				effectiveStatus = issue.status
+			}
+			_, _ = output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
+			_, _ = output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
+			if !hideSummary && len(issue.summary) > 0 {
+				_, _ = output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
+			}
+			_, _ = output.WriteString("}\n")
+		}
+	}
+	// write each relationship
+	for _, issue := range *issueInfo {
+		for _, blockedKey := range issue.blockedKeys {
+			_, _ = output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
+		}
+	}
+	// write end
+	_, _ = output.WriteString("@enduml\n")
+
+	err = output.Flush()
+	if err != nil {
+		return fmt.Errorf("couldn't flush: %v\n", err)
+	}
+	return nil
 }
 
 func normalizeKey(key string) string {
