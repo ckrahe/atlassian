@@ -70,7 +70,10 @@ func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bo
 	}
 	output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", wrapWidth))
 
-	headerInfo := readHeader(input)
+	headerInfo, err := readHeader(input)
+	if err != nil {
+		return fmt.Errorf("input file header failure: %v", err)
+	}
 	issueInfo := readIssues(input, headerInfo, keysToHide)
 
 	for _, issue := range issueInfo {
@@ -110,8 +113,12 @@ func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bo
 	return nil
 }
 
-func readHeader(input *bufio.Scanner) HeaderInfo {
+func readHeader(input *bufio.Scanner) (HeaderInfo, error) {
 	var headerInfo HeaderInfo
+	headerInfo.issueKeyIdx = -1
+	headerInfo.summaryIdx = -1
+	headerInfo.statusIdx = -1
+
 	input.Scan()
 	columns := strings.Split(input.Text(), ",")
 	for i, col := range columns {
@@ -132,53 +139,69 @@ func readHeader(input *bufio.Scanner) HeaderInfo {
 			headerInfo.blockedIdx = append(headerInfo.blockedIdx, i)
 		}
 	}
-	return headerInfo
+	if headerInfo.issueKeyIdx == -1 {
+		return headerInfo, fmt.Errorf("'Issue key' not found\n")
+	}
+
+	return headerInfo, nil
 }
 
 func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[string]struct{}) map[string]IssueInfo {
 	issues := make(map[string]IssueInfo)
 	for input.Scan() {
 		columns := strings.Split(input.Text(), ",")
-		issueKey := columns[headerInfo.issueKeyIdx]
-		_, hideIt := keysToHide[issueKey]
-		if !hideIt {
-			var issue IssueInfo
-			issue.issueKey = issueKey
-			issue.summary = columns[headerInfo.summaryIdx]
-			issue.status = columns[headerInfo.statusIdx]
-			for _, idx := range headerInfo.blockerIdx {
-				blockerKey := columns[idx]
-				if len(blockerKey) > 0 {
-					_, hideBlocker := keysToHide[blockerKey]
-					if !hideBlocker {
-						issue.blockerKeys = append(issue.blockerKeys, blockerKey)
-						_, ok := issues[blockerKey]
-						if !ok {
-							var blocker IssueInfo
-							blocker.issueKey = blockerKey
-							blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
-							issues[blockerKey] = blocker
+		if len(columns) > headerInfo.issueKeyIdx {
+			issueKey := columns[headerInfo.issueKeyIdx]
+			if len(issueKey) > 0 {
+				_, hideIt := keysToHide[issueKey]
+				if !hideIt {
+					var issue IssueInfo
+					issue.issueKey = issueKey
+					if headerInfo.summaryIdx != -1 && len(columns) > headerInfo.summaryIdx {
+						issue.summary = columns[headerInfo.summaryIdx]
+					}
+					if headerInfo.statusIdx != -1 && len(columns) > headerInfo.statusIdx {
+						issue.status = columns[headerInfo.statusIdx]
+					}
+					for _, idx := range headerInfo.blockerIdx {
+						if len(columns) > idx {
+							blockerKey := columns[idx]
+							if len(blockerKey) > 0 {
+								_, hideBlocker := keysToHide[blockerKey]
+								if !hideBlocker {
+									issue.blockerKeys = append(issue.blockerKeys, blockerKey)
+									_, ok := issues[blockerKey]
+									if !ok {
+										var blocker IssueInfo
+										blocker.issueKey = blockerKey
+										blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
+										issues[blockerKey] = blocker
+									}
+								}
+							}
 						}
 					}
-				}
-			}
-			for _, idx := range headerInfo.blockedIdx {
-				blockedKey := columns[idx]
-				if len(blockedKey) > 0 {
-					_, hideBlocked := keysToHide[blockedKey]
-					if !hideBlocked {
-						issue.blockedKeys = append(issue.blockedKeys, blockedKey)
-						_, ok := issues[blockedKey]
-						if !ok {
-							var blocked IssueInfo
-							blocked.issueKey = blockedKey
-							blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
-							issues[blockedKey] = blocked
+					for _, idx := range headerInfo.blockedIdx {
+						if len(columns) > idx {
+							blockedKey := columns[idx]
+							if len(blockedKey) > 0 {
+								_, hideBlocked := keysToHide[blockedKey]
+								if !hideBlocked {
+									issue.blockedKeys = append(issue.blockedKeys, blockedKey)
+									_, ok := issues[blockedKey]
+									if !ok {
+										var blocked IssueInfo
+										blocked.issueKey = blockedKey
+										blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
+										issues[blockedKey] = blocked
+									}
+								}
+							}
 						}
 					}
+					issues[issue.issueKey] = issue
 				}
 			}
-			issues[issue.issueKey] = issue
 		}
 	}
 	return issues
