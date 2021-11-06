@@ -163,48 +163,56 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[stri
 					if headerInfo.statusIdx != -1 && len(columns) > headerInfo.statusIdx {
 						issue.status = columns[headerInfo.statusIdx]
 					}
-					for _, idx := range headerInfo.blockerIdx {
-						if len(columns) > idx {
-							blockerKey := columns[idx]
-							if len(blockerKey) > 0 {
-								_, hideBlocker := keysToHide[blockerKey]
-								if !hideBlocker {
-									issue.blockerKeys = append(issue.blockerKeys, blockerKey)
-									_, ok := issues[blockerKey]
-									if !ok {
-										var blocker IssueInfo
-										blocker.issueKey = blockerKey
-										blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
-										issues[blockerKey] = blocker
-									}
-								}
-							}
-						}
-					}
-					for _, idx := range headerInfo.blockedIdx {
-						if len(columns) > idx {
-							blockedKey := columns[idx]
-							if len(blockedKey) > 0 {
-								_, hideBlocked := keysToHide[blockedKey]
-								if !hideBlocked {
-									issue.blockedKeys = append(issue.blockedKeys, blockedKey)
-									_, ok := issues[blockedKey]
-									if !ok {
-										var blocked IssueInfo
-										blocked.issueKey = blockedKey
-										blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
-										issues[blockedKey] = blocked
-									}
-								}
-							}
-						}
-					}
+					loadBlockers(&headerInfo, &columns, &keysToHide, &issue, &issues)
+					loadBlocked(&headerInfo, &columns, &keysToHide, &issue, &issues)
 					issues[issue.issueKey] = issue
 				}
 			}
 		}
 	}
 	return issues
+}
+
+func loadBlockers(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[string]struct{}, issue *IssueInfo, issues *map[string]IssueInfo) {
+	for _, idx := range headerInfo.blockerIdx {
+		if len(*columns) > idx {
+			blockerKey := (*columns)[idx]
+			if len(blockerKey) > 0 {
+				_, hideBlocker := (*keysToHide)[blockerKey]
+				if !hideBlocker {
+					issue.blockerKeys = append(issue.blockerKeys, blockerKey)
+					_, ok := (*issues)[blockerKey]
+					if !ok {
+						var blocker IssueInfo
+						blocker.issueKey = blockerKey
+						blocker.blockedKeys = append(blocker.blockerKeys, issue.issueKey)
+						(*issues)[blockerKey] = blocker
+					}
+				}
+			}
+		}
+	}
+}
+
+func loadBlocked(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[string]struct{}, issue *IssueInfo, issues *map[string]IssueInfo) {
+	for _, idx := range headerInfo.blockedIdx {
+		if len(*columns) > idx {
+			blockedKey := (*columns)[idx]
+			if len(blockedKey) > 0 {
+				_, hideBlocked := (*keysToHide)[blockedKey]
+				if !hideBlocked {
+					issue.blockedKeys = append(issue.blockedKeys, blockedKey)
+					_, ok := (*issues)[blockedKey]
+					if !ok {
+						var blocked IssueInfo
+						blocked.issueKey = blockedKey
+						blocked.blockerKeys = append(blocked.blockerKeys, issue.issueKey)
+						(*issues)[blockedKey] = blocked
+					}
+				}
+			}
+		}
+	}
 }
 
 func normalizeKey(key string) string {
