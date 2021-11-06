@@ -68,9 +68,10 @@ func process(inFile *os.File, outFile *os.File, keysToHide map[string]struct{}) 
 	if err != nil {
 		return fmt.Errorf("input file header failure: %v", err)
 	}
-	issueInfo := readIssues(input, headerInfo, keysToHide)
+	issues := make(map[string]IssueInfo)
+	readIssues(input, &headerInfo, &keysToHide, &issues)
 
-	err = writeOutput(&issueInfo, outFile)
+	err = writeOutput(&issues, outFile)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
@@ -111,14 +112,13 @@ func readHeader(input *bufio.Scanner) (HeaderInfo, error) {
 	return headerInfo, nil
 }
 
-func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[string]struct{}) map[string]IssueInfo {
-	issues := make(map[string]IssueInfo)
+func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) {
 	for input.Scan() {
 		columns := strings.Split(input.Text(), ",")
 		if len(columns) > headerInfo.issueKeyIdx {
 			issueKey := columns[headerInfo.issueKeyIdx]
 			if len(issueKey) > 0 {
-				_, hideIt := keysToHide[issueKey]
+				_, hideIt := (*keysToHide)[issueKey]
 				if !hideIt {
 					var issue IssueInfo
 					issue.issueKey = issueKey
@@ -128,14 +128,13 @@ func readIssues(input *bufio.Scanner, headerInfo HeaderInfo, keysToHide map[stri
 					if headerInfo.statusIdx != -1 && len(columns) > headerInfo.statusIdx {
 						issue.status = columns[headerInfo.statusIdx]
 					}
-					loadBlockers(&headerInfo, &columns, &keysToHide, &issue, &issues)
-					loadBlocked(&headerInfo, &columns, &keysToHide, &issue, &issues)
-					issues[issue.issueKey] = issue
+					loadBlockers(headerInfo, &columns, keysToHide, &issue, issues)
+					loadBlocked(headerInfo, &columns, keysToHide, &issue, issues)
+					(*issues)[issue.issueKey] = issue
 				}
 			}
 		}
 	}
-	return issues
 }
 
 func loadBlockers(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[string]struct{}, issue *IssueInfo, issues *map[string]IssueInfo) {
