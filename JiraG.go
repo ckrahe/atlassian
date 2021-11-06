@@ -35,13 +35,13 @@ func main() {
 	flag.Parse()
 	inFile, err := os.Open(*inFilename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "can't read input file (%s): %v\n", *inFilename, err)
+		_, _ = fmt.Fprintf(os.Stderr, "can't read input file (%s): %v\n", *inFilename, err)
 		os.Exit(1)
 	}
 	outFile, err := os.Create(*outFilename)
 	if err != nil {
-		inFile.Close()
-		fmt.Fprintf(os.Stderr, "can't create output file (%s): %v\n", *outFilename, err)
+		_ = inFile.Close()
+		_, _ = fmt.Fprintf(os.Stderr, "can't create output file (%s): %v\n", *outFilename, err)
 		os.Exit(1)
 	}
 	keysToHide := make(map[string]struct{})
@@ -53,10 +53,10 @@ func main() {
 	}
 
 	err = process(inFile, outFile, keysToHide)
-	inFile.Close()
-	outFile.Close()
+	_ = inFile.Close()
+	_ = outFile.Close()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "processing failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "processing failed: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -64,18 +64,26 @@ func main() {
 func process(inFile *os.File, outFile *os.File, keysToHide map[string]struct{}) error {
 	input := bufio.NewScanner(inFile)
 
-	headerInfo, err := readHeader(input)
-	if err != nil {
-		return fmt.Errorf("input file header failure: %v", err)
-	}
 	issues := make(map[string]IssueInfo)
-	readIssues(input, &headerInfo, &keysToHide, &issues)
+	err := processFile(input, &keysToHide, &issues)
+	if err != nil {
+		return fmt.Errorf("input failure: %v", err)
+	}
 
 	err = writeOutput(&issues, outFile)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
 
+	return nil
+}
+
+func processFile(input *bufio.Scanner, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
+	headerInfo, err := readHeader(input)
+	if err != nil {
+		return fmt.Errorf("header failure: %v", err)
+	}
+	readIssues(input, &headerInfo, keysToHide, issues)
 	return nil
 }
 
