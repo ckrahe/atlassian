@@ -26,6 +26,7 @@ type IssueInfo struct {
 
 var inFilename = flag.String("in", "tickets.csv", "the file to process")
 var outFilename = flag.String("out", "tickets.txt", "the file to create")
+var supplementalFilename = flag.String("supplemental", "", "supplemental file to process")
 var hideSummary = flag.Bool("hideSummary", false, "don't show ticket summaries")
 var hideOrphans = flag.Bool("hideOrphans", true, "don't show tickets without relationships")
 var hideKeys = flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
@@ -52,7 +53,7 @@ func main() {
 		}
 	}
 
-	err = process(inFile, outFile, keysToHide)
+	err = process(inFile, outFile, &keysToHide)
 	_ = inFile.Close()
 	_ = outFile.Close()
 	if err != nil {
@@ -61,11 +62,15 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File, keysToHide map[string]struct{}) error {
-	input := bufio.NewScanner(inFile)
-
+func process(inFile *os.File, outFile *os.File, keysToHide *map[string]struct{}) error {
 	issues := make(map[string]IssueInfo)
-	err := processFile(input, &keysToHide, &issues)
+
+	err := processSupplementalFile(keysToHide, &issues)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Problem processing supplemental: %v. Continuing.", err)
+	}
+
+	err = processFile(inFile, keysToHide, &issues)
 	if err != nil {
 		return fmt.Errorf("input failure: %v", err)
 	}
@@ -78,7 +83,23 @@ func process(inFile *os.File, outFile *os.File, keysToHide map[string]struct{}) 
 	return nil
 }
 
-func processFile(input *bufio.Scanner, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
+func processSupplementalFile(keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
+	if len(*supplementalFilename) > 0 {
+		supplementalFile, err := os.Open(*supplementalFilename)
+		if err != nil {
+			return fmt.Errorf("couldn't open: %v", err)
+		}
+		err = processFile(supplementalFile, keysToHide, issues)
+		if err != nil {
+			return fmt.Errorf("processing problem: %v", err)
+		}
+		_ = supplementalFile.Close()
+	}
+	return nil
+}
+
+func processFile(file *os.File, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
+	input := bufio.NewScanner(file)
 	headerInfo, err := readHeader(input)
 	if err != nil {
 		return fmt.Errorf("header failure: %v", err)
