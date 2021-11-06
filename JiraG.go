@@ -52,7 +52,7 @@ func main() {
 		}
 	}
 
-	err = process(inFile, outFile, *hideSummary, *hideOrphans, keysToHide, *wrapWidth)
+	err = process(inFile, outFile, keysToHide)
 	inFile.Close()
 	outFile.Close()
 	if err != nil {
@@ -61,7 +61,7 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bool, keysToHide map[string]struct{}, wrapWidth int) error {
+func process(inFile *os.File, outFile *os.File, keysToHide map[string]struct{}) error {
 	input := bufio.NewScanner(inFile)
 
 	headerInfo, err := readHeader(input)
@@ -70,7 +70,7 @@ func process(inFile *os.File, outFile *os.File, hideSummary bool, hideOrphans bo
 	}
 	issueInfo := readIssues(input, headerInfo, keysToHide)
 
-	err = writeOutput(&issueInfo, hideOrphans, outFile, hideSummary)
+	err = writeOutput(&issueInfo, outFile)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
@@ -180,7 +180,7 @@ func loadBlocked(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[stri
 	}
 }
 
-func writeOutput(issueInfo *map[string]IssueInfo, hideOrphans bool, outFile *os.File, hideSummary bool) error {
+func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File) error {
 	output := bufio.NewWriter(outFile)
 
 	// write header
@@ -192,14 +192,14 @@ func writeOutput(issueInfo *map[string]IssueInfo, hideOrphans bool, outFile *os.
 
 	// write each issue as an object
 	for _, issue := range *issueInfo {
-		if !hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+		if !*hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
 			effectiveStatus := "unknown"
 			if len(issue.status) > 0 {
 				effectiveStatus = issue.status
 			}
 			_, _ = output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
 			_, _ = output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
-			if !hideSummary && len(issue.summary) > 0 {
+			if !*hideSummary && len(issue.summary) > 0 {
 				_, _ = output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
 			}
 			_, _ = output.WriteString("}\n")
