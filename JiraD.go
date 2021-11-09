@@ -31,6 +31,7 @@ type Options struct {
 	hideSummary          bool
 	hideOrphans          bool
 	hideKeys             map[string]struct{}
+	showKeys             map[string]struct{}
 	highlightKeys        map[string]struct{}
 	highlightColor       string
 	wrapWidth            int
@@ -66,6 +67,7 @@ func loadOptions() Options {
 	hideSummary := flag.Bool("hideSummary", false, "don't show ticket summaries")
 	hideOrphans := flag.Bool("hideOrphans", true, "don't show tickets without relationships")
 	hideKeys := flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
+	showKeys := flag.String("showKeys", "", "always show these tickets (comma delimited)")
 	highlightKeys := flag.String("highlightKeys", "", "highlight these tickets (comma delimited)")
 	highlightColor := flag.String("highlightColor", "paleGreen", "color for highlightKeys")
 	wrapWidth := flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
@@ -77,20 +79,9 @@ func loadOptions() Options {
 	options.supplementalFilename = *supplementalFilename
 	options.hideSummary = *hideSummary
 	options.hideOrphans = *hideOrphans
-	if len(*hideKeys) > 0 {
-		options.hideKeys = make(map[string]struct{})
-		keysList := strings.Split(*hideKeys, ",")
-		for _, key := range keysList {
-			options.hideKeys[key] = struct{}{}
-		}
-	}
-	if len(*highlightKeys) > 0 {
-		options.highlightKeys = make(map[string]struct{})
-		keysList := strings.Split(*highlightKeys, ",")
-		for _, key := range keysList {
-			options.highlightKeys[key] = struct{}{}
-		}
-	}
+	options.hideKeys = parseKeys(*hideKeys)
+	options.showKeys = parseKeys(*showKeys)
+	options.highlightKeys = parseKeys(*highlightKeys)
 	options.highlightColor = *highlightColor
 	options.wrapWidth = *wrapWidth
 
@@ -183,7 +174,8 @@ func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, options Options, i
 			issueKey := strings.TrimSpace(columns[headerInfo.issueKeyIdx])
 			if len(issueKey) > 0 {
 				_, hideIt := (options.hideKeys)[issueKey]
-				if !hideIt {
+				_, showIt := (options.showKeys)[issueKey]
+				if showIt || !hideIt {
 					var issue IssueInfo
 					issue.issueKey = issueKey
 					if headerInfo.summaryIdx != -1 && len(columns) > headerInfo.summaryIdx {
@@ -255,7 +247,8 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 
 	// write each issue as an object
 	for _, issue := range *issueInfo {
-		if !options.hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+		_, showIt := (options.showKeys)[issue.issueKey]
+		if showIt || !options.hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
 			effectiveStatus := "unknown"
 			if len(issue.status) > 0 {
 				effectiveStatus = issue.status
@@ -287,6 +280,20 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 
 func normalizeKey(key string) string {
 	return strings.ReplaceAll(key, "-", "")
+}
+
+func parseKeys(keys string) map[string]struct{} {
+	keyMap := make(map[string]struct{})
+
+	if len(keys) > 0 {
+		keyMap = make(map[string]struct{})
+		keysList := strings.Split(keys, ",")
+		for _, key := range keysList {
+			keyMap[key] = struct{}{}
+		}
+	}
+
+	return keyMap
 }
 
 func getHighlight(key string, options Options) string {
