@@ -24,36 +24,31 @@ type IssueInfo struct {
 	blockerKeys []string
 }
 
-var inFilename = flag.String("in", "tickets.csv", "the file to process")
-var outFilename = flag.String("out", "tickets.txt", "the file to create")
-var supplementalFilename = flag.String("supplemental", "", "supplemental file to process")
-var hideSummary = flag.Bool("hideSummary", false, "don't show ticket summaries")
-var hideOrphans = flag.Bool("hideOrphans", true, "don't show tickets without relationships")
-var hideKeys = flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
-var wrapWidth = flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
+type Options struct {
+	inFilename           string
+	outFilename          string
+	supplementalFilename string
+	hideSummary          bool
+	hideOrphans          bool
+	hideKeys             map[string]struct{}
+	wrapWidth            int
+}
 
 func main() {
-	flag.Parse()
-	inFile, err := os.Open(*inFilename)
+	options := loadOptions()
+	inFile, err := os.Open(options.inFilename)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "can't read input file (%s): %v\n", *inFilename, err)
+		_, _ = fmt.Fprintf(os.Stderr, "can't read input file (%s): %v\n", options.inFilename, err)
 		os.Exit(1)
 	}
-	outFile, err := os.Create(*outFilename)
+	outFile, err := os.Create(options.outFilename)
 	if err != nil {
 		_ = inFile.Close()
-		_, _ = fmt.Fprintf(os.Stderr, "can't create output file (%s): %v\n", *outFilename, err)
+		_, _ = fmt.Fprintf(os.Stderr, "can't create output file (%s): %v\n", options.outFilename, err)
 		os.Exit(1)
 	}
-	keysToHide := make(map[string]struct{})
-	if len(*hideKeys) > 0 {
-		keysToHideList := strings.Split(*hideKeys, ",")
-		for _, hideKey := range keysToHideList {
-			keysToHide[hideKey] = struct{}{}
-		}
-	}
 
-	err = process(inFile, outFile, &keysToHide)
+	err = process(inFile, outFile, options)
 	_ = inFile.Close()
 	_ = outFile.Close()
 	if err != nil {
@@ -62,20 +57,48 @@ func main() {
 	}
 }
 
-func process(inFile *os.File, outFile *os.File, keysToHide *map[string]struct{}) error {
+func loadOptions() Options {
+	inFilename := flag.String("in", "tickets.csv", "the file to process")
+	outFilename := flag.String("out", "tickets.txt", "the file to create")
+	supplementalFilename := flag.String("supplemental", "", "supplemental file to process")
+	hideSummary := flag.Bool("hideSummary", false, "don't show ticket summaries")
+	hideOrphans := flag.Bool("hideOrphans", true, "don't show tickets without relationships")
+	hideKeys := flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
+	wrapWidth := flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
+	flag.Parse()
+
+	var options Options
+	options.inFilename = *inFilename
+	options.outFilename = *outFilename
+	options.supplementalFilename = *supplementalFilename
+	options.hideSummary = *hideSummary
+	options.hideOrphans = *hideOrphans
+	if len(*hideKeys) > 0 {
+		options.hideKeys = make(map[string]struct{})
+		keysList := strings.Split(*hideKeys, ",")
+		for _, hideKey := range keysList {
+			options.hideKeys[hideKey] = struct{}{}
+		}
+	}
+	options.wrapWidth = *wrapWidth
+
+	return options
+}
+
+func process(inFile *os.File, outFile *os.File, options Options) error {
 	issues := make(map[string]IssueInfo)
 
-	err := processSupplementalFile(keysToHide, &issues)
+	err := processSupplementalFile(options, &issues)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Problem processing supplemental: %v. Continuing.", err)
 	}
 
-	err = processFile(inFile, keysToHide, &issues)
+	err = processFile(inFile, options, &issues)
 	if err != nil {
 		return fmt.Errorf("input failure: %v", err)
 	}
 
-	err = writeOutput(&issues, outFile)
+	err = writeOutput(&issues, outFile, options)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
@@ -83,13 +106,13 @@ func process(inFile *os.File, outFile *os.File, keysToHide *map[string]struct{})
 	return nil
 }
 
-func processSupplementalFile(keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
-	if len(*supplementalFilename) > 0 {
-		supplementalFile, err := os.Open(*supplementalFilename)
+func processSupplementalFile(options Options, issues *map[string]IssueInfo) error {
+	if len(options.supplementalFilename) > 0 {
+		supplementalFile, err := os.Open(options.supplementalFilename)
 		if err != nil {
 			return fmt.Errorf("couldn't open: %v", err)
 		}
-		err = processFile(supplementalFile, keysToHide, issues)
+		err = processFile(supplementalFile, options, issues)
 		if err != nil {
 			return fmt.Errorf("processing problem: %v", err)
 		}
@@ -98,13 +121,13 @@ func processSupplementalFile(keysToHide *map[string]struct{}, issues *map[string
 	return nil
 }
 
-func processFile(file *os.File, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) error {
+func processFile(file *os.File, options Options, issues *map[string]IssueInfo) error {
 	input := bufio.NewScanner(file)
 	headerInfo, err := readHeader(input)
 	if err != nil {
 		return fmt.Errorf("header failure: %v", err)
 	}
-	readIssues(input, &headerInfo, keysToHide, issues)
+	readIssues(input, &headerInfo, options, issues)
 	return nil
 }
 
@@ -141,13 +164,13 @@ func readHeader(input *bufio.Scanner) (HeaderInfo, error) {
 	return headerInfo, nil
 }
 
-func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, keysToHide *map[string]struct{}, issues *map[string]IssueInfo) {
+func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, options Options, issues *map[string]IssueInfo) {
 	for input.Scan() {
 		columns := strings.Split(input.Text(), ",")
 		if len(columns) > headerInfo.issueKeyIdx {
-			issueKey := columns[headerInfo.issueKeyIdx]
+			issueKey := strings.TrimSpace(columns[headerInfo.issueKeyIdx])
 			if len(issueKey) > 0 {
-				_, hideIt := (*keysToHide)[issueKey]
+				_, hideIt := (options.hideKeys)[issueKey]
 				if !hideIt {
 					var issue IssueInfo
 					issue.issueKey = issueKey
@@ -157,8 +180,8 @@ func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, keysToHide *map[st
 					if headerInfo.statusIdx != -1 && len(columns) > headerInfo.statusIdx {
 						issue.status = columns[headerInfo.statusIdx]
 					}
-					loadBlockers(headerInfo, &columns, keysToHide, &issue, issues)
-					loadBlocked(headerInfo, &columns, keysToHide, &issue, issues)
+					loadBlockers(headerInfo, &columns, options, &issue, issues)
+					loadBlocked(headerInfo, &columns, options, &issue, issues)
 					(*issues)[issue.issueKey] = issue
 				}
 			}
@@ -166,12 +189,12 @@ func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, keysToHide *map[st
 	}
 }
 
-func loadBlockers(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[string]struct{}, issue *IssueInfo, issues *map[string]IssueInfo) {
+func loadBlockers(headerInfo *HeaderInfo, columns *[]string, options Options, issue *IssueInfo, issues *map[string]IssueInfo) {
 	for _, idx := range headerInfo.blockerIdx {
 		if len(*columns) > idx {
 			blockerKey := (*columns)[idx]
 			if len(blockerKey) > 0 {
-				_, hideBlocker := (*keysToHide)[blockerKey]
+				_, hideBlocker := (options.hideKeys)[blockerKey]
 				if !hideBlocker {
 					issue.blockerKeys = append(issue.blockerKeys, blockerKey)
 					_, ok := (*issues)[blockerKey]
@@ -187,12 +210,12 @@ func loadBlockers(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[str
 	}
 }
 
-func loadBlocked(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[string]struct{}, issue *IssueInfo, issues *map[string]IssueInfo) {
+func loadBlocked(headerInfo *HeaderInfo, columns *[]string, options Options, issue *IssueInfo, issues *map[string]IssueInfo) {
 	for _, idx := range headerInfo.blockedIdx {
 		if len(*columns) > idx {
 			blockedKey := (*columns)[idx]
 			if len(blockedKey) > 0 {
-				_, hideBlocked := (*keysToHide)[blockedKey]
+				_, hideBlocked := (options.hideKeys)[blockedKey]
 				if !hideBlocked {
 					issue.blockedKeys = append(issue.blockedKeys, blockedKey)
 					_, ok := (*issues)[blockedKey]
@@ -208,7 +231,7 @@ func loadBlocked(headerInfo *HeaderInfo, columns *[]string, keysToHide *map[stri
 	}
 }
 
-func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File) error {
+func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Options) error {
 	output := bufio.NewWriter(outFile)
 
 	// write header
@@ -216,18 +239,18 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File) error {
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
 	}
-	_, _ = output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", wrapWidth))
+	_, _ = output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", options.wrapWidth))
 
 	// write each issue as an object
 	for _, issue := range *issueInfo {
-		if !*hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
+		if !options.hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
 			effectiveStatus := "unknown"
 			if len(issue.status) > 0 {
 				effectiveStatus = issue.status
 			}
 			_, _ = output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
 			_, _ = output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
-			if !*hideSummary && len(issue.summary) > 0 {
+			if !options.hideSummary && len(issue.summary) > 0 {
 				_, _ = output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
 			}
 			_, _ = output.WriteString("}\n")
