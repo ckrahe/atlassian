@@ -31,6 +31,8 @@ type Options struct {
 	hideSummary          bool
 	hideOrphans          bool
 	hideKeys             map[string]struct{}
+	highlightKeys        map[string]struct{}
+	highlightColor       string
 	wrapWidth            int
 }
 
@@ -64,6 +66,8 @@ func loadOptions() Options {
 	hideSummary := flag.Bool("hideSummary", false, "don't show ticket summaries")
 	hideOrphans := flag.Bool("hideOrphans", true, "don't show tickets without relationships")
 	hideKeys := flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
+	highlightKeys := flag.String("highlightKeys", "", "highlight these tickets (comma delimited)")
+	highlightColor := flag.String("highlightColor", "paleGreen", "color for highlightKeys")
 	wrapWidth := flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
 	flag.Parse()
 
@@ -76,10 +80,18 @@ func loadOptions() Options {
 	if len(*hideKeys) > 0 {
 		options.hideKeys = make(map[string]struct{})
 		keysList := strings.Split(*hideKeys, ",")
-		for _, hideKey := range keysList {
-			options.hideKeys[hideKey] = struct{}{}
+		for _, key := range keysList {
+			options.hideKeys[key] = struct{}{}
 		}
 	}
+	if len(*highlightKeys) > 0 {
+		options.highlightKeys = make(map[string]struct{})
+		keysList := strings.Split(*highlightKeys, ",")
+		for _, key := range keysList {
+			options.highlightKeys[key] = struct{}{}
+		}
+	}
+	options.highlightColor = *highlightColor
 	options.wrapWidth = *wrapWidth
 
 	return options
@@ -248,7 +260,8 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 			if len(issue.status) > 0 {
 				effectiveStatus = issue.status
 			}
-			_, _ = output.WriteString(fmt.Sprintf("object %s {\n", normalizeKey(issue.issueKey)))
+			_, _ = output.WriteString(fmt.Sprintf("object %s %s {\n", normalizeKey(issue.issueKey),
+				getHighlight(issue.issueKey, options)))
 			_, _ = output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
 			if !options.hideSummary && len(issue.summary) > 0 {
 				_, _ = output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
@@ -274,4 +287,15 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 
 func normalizeKey(key string) string {
 	return strings.ReplaceAll(key, "-", "")
+}
+
+func getHighlight(key string, options Options) string {
+	var highlight string
+	_, highlightIt := (options.highlightKeys)[key]
+	if highlightIt {
+		highlight = fmt.Sprintf("#%s", options.highlightColor)
+	} else {
+		highlight = ""
+	}
+	return highlight
 }
