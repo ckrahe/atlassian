@@ -101,6 +101,8 @@ func process(inFile *os.File, outFile *os.File, options Options) error {
 		return fmt.Errorf("input failure: %v", err)
 	}
 
+	fillDependencies(&issues)
+
 	err = writeOutput(&issues, outFile, options)
 	if err != nil {
 		return fmt.Errorf("output failure: %v", err)
@@ -235,7 +237,30 @@ func loadBlocked(headerInfo *HeaderInfo, columns *[]string, options Options, iss
 	}
 }
 
-func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Options) error {
+func fillDependencies(issues *map[string]IssueInfo) {
+	for _, issue := range *issues {
+		for _, blockerKey := range issue.blockerKeys {
+			blocker := (*issues)[blockerKey]
+			if !containsKey(&blocker.blockedKeys, issue.issueKey) {
+				blocker.blockedKeys = append(blocker.blockedKeys, issue.issueKey)
+				(*issues)[blocker.issueKey] = blocker
+			}
+		}
+	}
+}
+
+func containsKey(keys *[]string, searchKey string) bool {
+	found := false
+	for _, key := range *keys {
+		if key == searchKey {
+			found = true
+			break
+		}
+	}
+	return found
+}
+
+func writeOutput(issues *map[string]IssueInfo, outFile *os.File, options Options) error {
 	output := bufio.NewWriter(outFile)
 
 	// write header
@@ -246,7 +271,7 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 	_, _ = output.WriteString(fmt.Sprintf("skinparam wrapWidth %d\n", options.wrapWidth))
 
 	// write each issue as an object
-	for _, issue := range *issueInfo {
+	for _, issue := range *issues {
 		_, showIt := (options.showKeys)[issue.issueKey]
 		if showIt || !options.hideOrphans || len(issue.blockedKeys) > 0 || len(issue.blockerKeys) > 0 {
 			effectiveStatus := "unknown"
@@ -263,7 +288,7 @@ func writeOutput(issueInfo *map[string]IssueInfo, outFile *os.File, options Opti
 		}
 	}
 	// write each relationship
-	for _, issue := range *issueInfo {
+	for _, issue := range *issues {
 		for _, blockedKey := range issue.blockedKeys {
 			_, _ = output.WriteString(fmt.Sprintf("%s <|-- %s\n", normalizeKey(issue.issueKey), normalizeKey(blockedKey)))
 		}
