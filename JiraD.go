@@ -188,11 +188,37 @@ func readIssues(input *bufio.Scanner, headerInfo *HeaderInfo, options Options, i
 					}
 					loadBlockers(headerInfo, &columns, options, &issue, issues)
 					loadBlocked(headerInfo, &columns, options, &issue, issues)
-					(*issues)[issue.issueKey] = issue
+
+					if existing, found := (*issues)[issue.issueKey]; found {
+						merge(&existing, &issue, issues)
+					} else {
+						(*issues)[issue.issueKey] = issue
+					}
 				}
 			}
 		}
 	}
+}
+
+func merge(target *IssueInfo, source *IssueInfo, issues *map[string]IssueInfo) {
+	if len(target.summary) == 0 {
+		target.summary = source.summary
+	}
+	if len(target.status) == 0 {
+		target.status = source.status
+	}
+	for _, blockerKey := range source.blockerKeys {
+		if !containsKey(&(*target).blockerKeys, blockerKey) {
+			(*target).blockerKeys = append((*target).blockerKeys, blockerKey)
+		}
+	}
+	for _, blockedKey := range source.blockedKeys {
+		if !containsKey(&(*target).blockedKeys, blockedKey) {
+			(*target).blockedKeys = append((*target).blockedKeys, blockedKey)
+		}
+	}
+
+	(*issues)[target.issueKey] = *target
 }
 
 func loadBlockers(headerInfo *HeaderInfo, columns *[]string, options Options, issue *IssueInfo, issues *map[string]IssueInfo) {
@@ -240,10 +266,13 @@ func loadBlocked(headerInfo *HeaderInfo, columns *[]string, options Options, iss
 func fillDependencies(issues *map[string]IssueInfo) {
 	for _, issue := range *issues {
 		for _, blockerKey := range issue.blockerKeys {
-			blocker := (*issues)[blockerKey]
-			if !containsKey(&blocker.blockedKeys, issue.issueKey) {
-				blocker.blockedKeys = append(blocker.blockedKeys, issue.issueKey)
-				(*issues)[blocker.issueKey] = blocker
+			if blocker, found := (*issues)[blockerKey]; found {
+				if !containsKey(&blocker.blockedKeys, issue.issueKey) {
+					blocker.blockedKeys = append(blocker.blockedKeys, issue.issueKey)
+					(*issues)[blocker.issueKey] = blocker
+				}
+			} else {
+				_, _ = fmt.Fprintf(os.Stdout, "Blocker not found: %s", blockerKey)
 			}
 		}
 	}
