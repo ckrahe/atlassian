@@ -16,8 +16,9 @@ JiraD turns Jira issue relationships from a CSV export into [PlantUML](https://w
 * **-hideOrphans**=_BOOL_ = If 'true', only shows tickets with relationships. Defaults to 'true'.
 * **-hideKeys** _LIST_ = Comma-separated list of issue keys to exclude from the output. Handy for eliminating noise.
 * **-showKeys** _LIST_ = Comma-separated list of issue keys to always show, regardless of _hideOrphans_ and _hideKeys_.
-* **-highlightKeys** _LIST- = Comma-separated list of issue keys to highlight in _highlightColor_
-* **-highlightColor** _color_ = PlantUML color used for highlightKeys. Defaults to 'paleGreen'.
+* **-colorByStatus**=_BOOL_ = If 'true', sets ticket background color to match its status. Defaults to 'true'. 
+* **-highlightKeys** _LIST- = Comma-separated list of issue keys to highlight in _highlightColor_. Overrides colorByStatus.
+* **-highlightColor** _color_ = PlantUML color used for highlightKeys. Defaults to 'DeepPink'.
 * **-wrapWidth** _NUMBER_ = Point at which to start wrapping summary text. This is an undocumented feature of PlantUML; I'm not sure of the units, but it might be pixels when images are created? Defaults to 150. 
 
 ### Notes

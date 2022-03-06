@@ -71,7 +71,7 @@ func loadOptions() Options {
 	showKeys := flag.String("showKeys", "", "always show these tickets (comma delimited)")
 	colorByStatus := flag.Bool("colorByStatus", true, "color tickets by their status")
 	highlightKeys := flag.String("highlightKeys", "", "highlight these tickets (comma delimited)")
-	highlightColor := flag.String("highlightColor", "", "color for highlightKeys")
+	highlightColor := flag.String("highlightColor", "DeepPink", "color for highlightKeys")
 	wrapWidth := flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
 	flag.Parse()
 
