@@ -32,6 +32,7 @@ type Options struct {
 	hideOrphans          bool
 	hideKeys             map[string]struct{}
 	showKeys             map[string]struct{}
+	colorByStatus        bool
 	highlightKeys        map[string]struct{}
 	highlightColor       string
 	wrapWidth            int
@@ -68,8 +69,9 @@ func loadOptions() Options {
 	hideOrphans := flag.Bool("hideOrphans", true, "don't show tickets without relationships")
 	hideKeys := flag.String("hideKeys", "", "don't show these tickets (comma delimited)")
 	showKeys := flag.String("showKeys", "", "always show these tickets (comma delimited)")
+	colorByStatus := flag.Bool("colorByStatus", true, "color tickets by their status")
 	highlightKeys := flag.String("highlightKeys", "", "highlight these tickets (comma delimited)")
-	highlightColor := flag.String("highlightColor", "paleGreen", "color for highlightKeys")
+	highlightColor := flag.String("highlightColor", "", "color for highlightKeys")
 	wrapWidth := flag.Int("wrapWidth", 150, "Point at which to start wrapping text")
 	flag.Parse()
 
@@ -81,6 +83,7 @@ func loadOptions() Options {
 	options.hideOrphans = *hideOrphans
 	options.hideKeys = parseKeys(*hideKeys)
 	options.showKeys = parseKeys(*showKeys)
+	options.colorByStatus = *colorByStatus
 	options.highlightKeys = parseKeys(*highlightKeys)
 	options.highlightColor = *highlightColor
 	options.wrapWidth = *wrapWidth
@@ -308,7 +311,7 @@ func writeOutput(issues *map[string]IssueInfo, outFile *os.File, options Options
 				effectiveStatus = issue.status
 			}
 			_, _ = output.WriteString(fmt.Sprintf("object %s %s {\n", normalizeKey(issue.issueKey),
-				getHighlight(issue.issueKey, options)))
+				getColor(&issue, options)))
 			_, _ = output.WriteString(fmt.Sprintf("  %s\n", strings.ToUpper(effectiveStatus)))
 			if !options.hideSummary && len(issue.summary) > 0 {
 				_, _ = output.WriteString(fmt.Sprintf("  %s\n", issue.summary))
@@ -350,13 +353,32 @@ func parseKeys(keys string) map[string]struct{} {
 	return keyMap
 }
 
-func getHighlight(key string, options Options) string {
-	var highlight string
-	_, highlightIt := (options.highlightKeys)[key]
-	if highlightIt {
-		highlight = fmt.Sprintf("#%s", options.highlightColor)
-	} else {
-		highlight = ""
+func getColor(issue *IssueInfo, options Options) string {
+	var color string
+	color = "" // default
+
+	if options.colorByStatus {
+		switch strings.ToLower(issue.status) {
+		case "to do":
+			color = "#LightGoldenRodYellow"
+		case "in progress":
+			color = "#PaleGreen"
+		case "in review":
+			color = "#SkyBlue"
+		case "blocked":
+			color = "#PaleVioletRed"
+		case "done":
+			color = "#LightGray"
+		}
+
 	}
-	return highlight
+
+	if len(options.highlightColor) > 0 {
+		_, highlightIt := (options.highlightKeys)[issue.issueKey]
+		if highlightIt {
+			color = fmt.Sprintf("#%s", options.highlightColor)
+		}
+	}
+
+	return color
 }
